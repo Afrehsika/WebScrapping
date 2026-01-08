@@ -2,3 +2,5 @@ beautifulsoup4
 lxml
 requests
 pandas
+httpx
+python-dotenv

@@ -23,43 +23,48 @@ def get_soup(url):
     return BeautifulSoup(r.text, "lxml")
 
 def get_product_links():
-    """Collect product links from shop pagination."""
+    """Collect product links by crawling known category pages and paginating them.
+
+    The site's shop listing is structured by category pages (e.g. /cat/wholesale-face-care/)
+    which contain links to individual product pages under /product/. This function
+    visits a set of categories and paginates through them to find product URLs.
+    """
     links = set()
-    page = 1
 
-    while True:
-        if page > MAX_PAGES:
-            print("Reached max pages; stopping to avoid infinite loop.")
+    # seed category pages known to contain skincare/face-care products
+    categories = [
+        f"{BASE_URL}/cat/wholesale-face-care/",
+        f"{BASE_URL}/cat/wholesale-face-care/cleanser/",
+        f"{BASE_URL}/cat/wholesale-face-care/serums/",
+        f"{BASE_URL}/cat/wholesale-face-care/face-masks-beauty/",
+    ]
+
+    for cat in categories:
+        for page in range(1, 6):  # limit per-category pages to avoid long runs
+            url = cat if page == 1 else cat.rstrip('/') + f"/page/{page}/"
+            print(f"Loading category page: {url}")
+            try:
+                soup = get_soup(url)
+            except RequestException as e:
+                print(f"Request failed for {url}: {e}")
+                break
+
+            # find links that point to product pages
+            for a in soup.select('a[href*="/product/"]'):
+                href = a.get('href')
+                if not href:
+                    continue
+                full = urljoin(BASE_URL, href)
+                if full.startswith(BASE_URL) and '/product/' in full:
+                    links.add(full.split('?')[0])
+
+            time.sleep(0.8)
+
+            if len(links) >= MAX_PRODUCTS * 2:  # gather a buffer, we'll trim later
+                break
+
+        if len(links) >= MAX_PRODUCTS * 2:
             break
-
-        url = SHOP_URL + f"?filter_page={page}"
-        print(f"Loading page {page}: {url}")
-
-        try:
-            soup = get_soup(url)
-        except RequestException as e:
-            print(f"Request failed for {url}: {e}")
-            break
-
-        items = soup.select("li.product a.woocommerce-LoopProduct-link")
-        if not items:
-            break
-
-        before = len(links)
-        for a in items:
-            href = a.get("href")
-            if not href:
-                continue
-            full = urljoin(BASE_URL, href)
-            if full.startswith(BASE_URL):
-                links.add(full)
-
-        if len(links) == before:
-            print("No new links found on this page; stopping.")
-            break
-
-        page += 1
-        time.sleep(1)  # gentle pause
 
     print(f"Total product URLs found: {len(links)}")
     return list(links)
